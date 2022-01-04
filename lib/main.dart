@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/cupertino.dart';
+import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
+
+import 'model.dart';
 
 void main() {
   runApp(MyApp());
@@ -31,6 +33,7 @@ class Gallery extends StatefulWidget {
 
 class _GalleryState extends State<Gallery> {
   var assets = <AssetEntity>[];
+  late StyleModel _styleModel;
 
   //TODO: Rewrite to paginated
   _fetchAssets() async {
@@ -51,6 +54,7 @@ class _GalleryState extends State<Gallery> {
   @override
   void initState(){
     _fetchAssets();
+    _styleModel = StyleModel();
     super.initState();
   }
 
@@ -65,7 +69,7 @@ class _GalleryState extends State<Gallery> {
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3),
           itemCount: assets.length,
           itemBuilder: (_, index){
-            return Thumbnail(asset: assets[index]);
+            return Thumbnail(asset: assets[index], styleModel: _styleModel);
           }
       )
     );
@@ -73,9 +77,10 @@ class _GalleryState extends State<Gallery> {
 }
 
 class Thumbnail extends StatelessWidget {
-  const Thumbnail({Key? key, required this.asset}) : super(key: key);
+  const Thumbnail({Key? key, required this.asset, required this.styleModel}) : super(key: key);
 
   final AssetEntity asset;
+  final StyleModel styleModel;
 
   @override
   Widget build(BuildContext context) {
@@ -87,7 +92,7 @@ class Thumbnail extends StatelessWidget {
           return InkWell(
             onTap: () {
               if(asset.type == AssetType.image){
-                Navigator.push(context, MaterialPageRoute(builder: (_) => ImageScreen(imageFile: asset.file)));
+                Navigator.push(context, MaterialPageRoute(builder: (_) => ImageScreen(imageFile: asset.file, styleModel: styleModel,)));
               }
             },
             child: Stack(
@@ -102,9 +107,19 @@ class Thumbnail extends StatelessWidget {
 }
 
 class ImageScreen extends StatelessWidget {
-  const ImageScreen({Key? key, required this.imageFile}) : super(key: key);
+  const ImageScreen({Key? key, required this.imageFile, required this.styleModel}) : super(key: key);
 
   final Future<File?> imageFile;
+  final StyleModel styleModel;
+
+  void predictStyle() async {
+    imageFile.then((value) async {
+      final imgBytes = await value!.readAsBytes();
+      img.Image inputImage = img.decodeImage(imgBytes)!;
+      var style = styleModel.predict(inputImage);
+      print(style);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -131,13 +146,15 @@ class ImageScreen extends StatelessWidget {
                 Padding(
                   padding: EdgeInsets.all(10),
                   child: FloatingActionButton(
-                        onPressed: (){},
+                        onPressed: predictStyle,
+                        child: Icon(Icons.brush),
                     ),
                 ),
                 Padding(
                   padding: EdgeInsets.all(10),
                   child: FloatingActionButton(
                     onPressed: (){},
+                    child: Icon(Icons.ios_share),
                   ),
                 ),
               ],
