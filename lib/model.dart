@@ -107,7 +107,7 @@ class StyleTransferModel extends Model{
 
     TensorImage outputImage = TensorImage(_outputType);
     outputImage.loadTensorBuffer(_outputBuffer);
-    outputImage = ImageProcessorBuilder().add(NormalizeOp(127.5, 127.5)).build().process(outputImage);
+    outputImage = ImageProcessorBuilder().add(NormalizeOp(1/127.5, 1/127.5)).build().process(outputImage);
     print(outputImage.buffer.asFloat32List());
     return outputImage.image;
   }
