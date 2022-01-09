@@ -34,6 +34,8 @@ dependencies:
   tflite_flutter_helper:
     git:
       url: https://github.com/am15h/tflite_flutter_helper.git
+  path_provider: ^2.0.4
+  gallery_saver: ^2.3.2
 
 dev_dependencies:
   flutter_test:
