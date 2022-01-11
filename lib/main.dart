@@ -6,7 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:gallery_saver/gallery_saver.dart';
-
+import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'model.dart';
 
@@ -20,12 +21,10 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Neural Style Transfer',
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        primarySwatch: Colors.lightGreen,
       ),
       initialRoute: '/',
-      routes: {
-        '/': (context) => Gallery()
-      },
+      routes: {'/': (context) => Gallery()},
     );
   }
 }
@@ -39,65 +38,108 @@ class Gallery extends StatefulWidget {
 
 class _GalleryState extends State<Gallery> {
   var assets = <AssetEntity>[];
+  bool isBusy = false;
 
-  //TODO: Rewrite to paginated
-  _fetchAssets() async {
+  setBusy(bool busy) {
+    print("Get busy");
+    setState(() {
+      isBusy = busy;
+    });
+  }
+
+  Future<void> _fetchAssets() async {
     final albums = await PhotoManager.getAssetPathList(onlyAll: true);
     final recentAlbum = albums.first;
-    final recentAssets = await recentAlbum.getAssetListRange(start: 0, end: 1000);
+    final recentAssets =
+        await recentAlbum.getAssetListRange(start: 0, end: 1000);
     setState(() {
       assets = recentAssets;
     });
+    print("Feteched assets");
   }
 
   void _checkPermissions() async {
     final permissions = await PhotoManager.requestPermissionExtend();
-    if(permissions.isAuth) return;
-    else PhotoManager.openSetting();
+    if (permissions.isAuth)
+      return;
+    else
+      PhotoManager.openSetting();
   }
 
   @override
-  void initState(){
+  void initState() {
     _fetchAssets();
     super.initState();
   }
 
   @override
   Widget build(BuildContext context) {
+    print(isBusy);
     _checkPermissions();
+
     RouteSettings? routeSettings = ModalRoute.of(context)?.settings;
-    final args = routeSettings?.arguments != null ? routeSettings!.arguments as GalleryArgs : GalleryArgs(false, Future<Null>.value(null) );
+    final args = routeSettings?.arguments != null
+        ? routeSettings!.arguments as GalleryArgs
+        : GalleryArgs();
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Pictures'),
-      ),
-      body: GridView.builder(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3),
-          itemCount: assets.length,
-          itemBuilder: (_, index){
-            return Thumbnail(asset: assets[index], args: args);
-          }
-      )
-    );
+        appBar: AppBar(
+          title: Text('Pictures'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh pictures',
+              onPressed: () {
+                _fetchAssets();
+              },
+            ),
+          ],
+        ),
+        body: isBusy
+            ? Container(
+                color: Colors.white,
+                child: Center(
+                    child: SpinKitFadingCube(
+                        color: Colors.lightGreen[100],
+                        size: 50.0
+                    )
+                )
+            )
+            : GridView.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3),
+                itemCount: assets.length,
+                itemBuilder: (_, index) {
+                  return Thumbnail(
+                      asset: assets[index], setBusy: setBusy, fetchAssets: _fetchAssets, args: args);
+                }));
   }
 }
 
 class Thumbnail extends StatefulWidget {
-  const Thumbnail({Key? key, required this.asset, required this.args}) : super(key: key);
+  const Thumbnail(
+      {Key? key,
+      required this.asset,
+      required this.args,
+      required this.setBusy,
+      required this.fetchAssets})
+      : super(key: key);
 
   final AssetEntity asset;
   final GalleryArgs args;
+  final Function(bool) setBusy;
+  final Function fetchAssets;
 
   @override
   _ThumbnailState createState() => _ThumbnailState();
 }
 
 class _ThumbnailState extends State<Thumbnail> {
-  void transferStyle(Future<File?> inputImageFile) async {
-    inputImageFile.then((inputFile) async {
-      img.Image inputImage = img.decodeImage(await inputFile!.readAsBytes() )!;
+  Future transferStyle(Future<File?> inputImageFile) async {
+    await inputImageFile.then((inputFile) async {
+      img.Image inputImage = img.decodeImage(await inputFile!.readAsBytes())!;
 
-      widget.asset.file.then((styleFile) async {
+      await widget.asset.file.then((styleFile) async {
         final predictionModel = StylePredictionModel();
         final transferModel = StyleTransferModel();
 
@@ -105,34 +147,43 @@ class _ThumbnailState extends State<Thumbnail> {
         await transferModel.loadModel();
 
         img.Image styleImage = img.decodeImage(await styleFile!.readAsBytes())!;
-        var style = [[[predictionModel.predict(styleImage)]]];
+        var style = [
+          [
+            [predictionModel.predict(styleImage)]
+          ]
+        ];
 
         img.Image? outputImage = transferModel.predict(inputImage, style);
-        final filename = '${inputFile.path.split("/").last.split('.').first}_${styleFile.path.split("/").last.split('.').first}.jpeg';
+        final filename =
+            '${inputFile.path.split("/").last.split('.').first}_${styleFile.path.split("/").last.split('.').first}.jpeg';
         final Directory appDir = await getApplicationDocumentsDirectory();
         final String path = '${appDir.path}/$filename';
-        File file  = await File(path).writeAsBytes(img.encodeJpg(outputImage!));
-        GallerySaver.saveImage(file.path);
+        File file = await File(path).writeAsBytes(img.encodeJpg(outputImage!));
+        await GallerySaver.saveImage(file.path);
       });
     });
-
   }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Uint8List?>(
         future: widget.asset.thumbData,
-        builder: (_, snapshot){
+        builder: (_, snapshot) {
           final bytes = snapshot.data;
-          if(bytes == null) return CircularProgressIndicator();
+          if (bytes == null) return CircularProgressIndicator();
           return InkWell(
-            onTap: () {
-              if(widget.asset.type == AssetType.image){
-                if(!widget.args.styleSelected){
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => ImageScreen(imageFile: widget.asset.file)));
-                }else{
-                  transferStyle(widget.args.imageFile);
-                  Navigator.pushNamed(context, '/', arguments: null);
+            onTap: () async {
+              if (widget.asset.type == AssetType.image) {
+                if (!widget.args.styleSelected) {
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              ImageScreen(imageFile: widget.asset.file)));
+                } else {
+                  widget.setBusy(true);
+                  Navigator.pushNamed(context, '/', arguments: GalleryArgs());
+                  await transferStyle(widget.args.imageFile!).then((_) => widget.setBusy(false));
                 }
               }
             },
@@ -142,16 +193,15 @@ class _ThumbnailState extends State<Thumbnail> {
               ],
             ),
           );
-        }
-    );
+        });
   }
 }
 
 class GalleryArgs {
   final bool styleSelected;
-  final Future<File?> imageFile;
+  final Future<File?>? imageFile;
 
-  GalleryArgs(this.styleSelected, this.imageFile);
+  GalleryArgs({this.styleSelected = false, this.imageFile});
 }
 
 class ImageScreen extends StatelessWidget {
@@ -161,46 +211,45 @@ class ImageScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-          children:[
-          Container(
-            alignment: Alignment.center,
-            color: Colors.black,
-            child:
-              FutureBuilder<File?>(
-                future: imageFile,
-                builder: (_, snapshot) {
-                  final file = snapshot.data;
-                  if(file == null) return Container();
-                  return Image.file(file);
-              }
-            )
-          ),
-          Positioned(
-            bottom: 10,
-            right: 10,
-            child: Column(
-              children: [
-                Padding(
-                  padding: EdgeInsets.all(10),
-                  child: FloatingActionButton(
-                        onPressed: (){
-                          Navigator.pushNamed(context, '/', arguments: GalleryArgs(true, imageFile));
-                          },
-                        child: Icon(Icons.brush),
-                    ),
+    return Stack(children: [
+      Container(
+          alignment: Alignment.center,
+          color: Colors.black,
+          child: FutureBuilder<File?>(
+              future: imageFile,
+              builder: (_, snapshot) {
+                final file = snapshot.data;
+                if (file == null) return Container();
+                return Image.file(file);
+              })),
+      Positioned(
+          bottom: 10,
+          right: 10,
+          child: Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.all(10),
+                child: FloatingActionButton(
+                  onPressed: () {
+                    Navigator.pushNamed(context, '/',
+                        arguments: GalleryArgs(
+                            styleSelected: true, imageFile: imageFile));
+                  },
+                  child: Icon(Icons.brush),
                 ),
-                Padding(
-                  padding: EdgeInsets.all(10),
-                  child: FloatingActionButton(
-                    onPressed: (){},
-                    child: Icon(Icons.ios_share),
-                  ),
+              ),
+              Padding(
+                padding: EdgeInsets.all(10),
+                child: FloatingActionButton(
+                  onPressed: () async {
+                    File? file = await imageFile;
+                    Share.shareFiles([file!.path]);
+                  },
+                  child: Icon(Icons.ios_share),
                 ),
-              ],
-            )
-        )
-      ]
-    );
+              ),
+            ],
+          ))
+    ]);
   }
 }

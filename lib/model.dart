@@ -23,7 +23,16 @@ abstract class Model{
   NormalizeOp get preProcessNormalizeOp;
 
   Model(){
-    _interpreterOptions = InterpreterOptions();
+    final gpuDelegate = GpuDelegateV2(
+        options: GpuDelegateOptionsV2(
+          isPrecisionLossAllowed: false,
+          inferencePreference : TfLiteGpuInferenceUsage.fastSingleAnswer,
+          inferencePriority1: TfLiteGpuInferencePriority.minLatency,
+          inferencePriority2: TfLiteGpuInferencePriority.auto,
+          inferencePriority3: TfLiteGpuInferencePriority.auto,
+        ));
+
+    _interpreterOptions = InterpreterOptions()..addDelegate(gpuDelegate);
   }
 
   Future<void> loadModel() async {
@@ -66,7 +75,7 @@ class StylePredictionModel extends Model{
   String get modelName => '256_fp16_prediction.tflite';
 
   @override
-  NormalizeOp get preProcessNormalizeOp => NormalizeOp(127.5, 127.5);
+  NormalizeOp get preProcessNormalizeOp => NormalizeOp(0, 255);
 
   List predict(Image image){
     _inputImage = TensorImage(_inputType);
@@ -91,7 +100,7 @@ class StyleTransferModel extends Model{
   get modelName => '256_fp16_transfer.tflite';
 
   @override
-  NormalizeOp get preProcessNormalizeOp => NormalizeOp(127.5, 127.5);
+  NormalizeOp get preProcessNormalizeOp => NormalizeOp(0, 255);
 
   Image? predict(Image image, List style){
     _inputImage = TensorImage(_inputType);
@@ -102,13 +111,13 @@ class StyleTransferModel extends Model{
     Map<int, ByteBuffer> outputs = {0: _outputBuffer.getBuffer()};
 
     interpreter.runForMultipleInputs(inputs, outputs);
-
-    print(outputs[0]!.asFloat32List());
-
     TensorImage outputImage = TensorImage(_outputType);
     outputImage.loadTensorBuffer(_outputBuffer);
-    outputImage = ImageProcessorBuilder().add(NormalizeOp(1/127.5, 1/127.5)).build().process(outputImage);
+
+    print("Styled image floats");
     print(outputImage.buffer.asFloat32List());
+
+    outputImage = ImageProcessorBuilder().add(NormalizeOp(0, 1/255)).build().process(outputImage);
     return outputImage.image;
   }
 }
